@@ -65,10 +65,10 @@ def main():
   if IsReferenceDeviceOnNetwork(
       keys.PRIVATE_IP_SUBNET, keys.DEVICE_MAC_ADDRESS):
     print 'Device found on network; set status to HOME'
-    #print SetAwayStatus(keys.ACCESS_TOKEN, structure_ids, status=STATUS_HOME)
+    print SetAwayStatus(keys.ACCESS_TOKEN, structure_ids, status=STATUS_HOME)
   else:
     print 'No device found on network; set status to AWAY'
-    #print SetAwayStatus(keys.ACCESS_TOKEN, structure_ids, status=STATUS_AWAY)
+    print SetAwayStatus(keys.ACCESS_TOKEN, structure_ids, status=STATUS_AWAY)
 
 
 if __name__ == '__main__':
