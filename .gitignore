@@ -57,3 +57,5 @@ target/
 .idea/
 
 keys.py
+calendar.dat
+client_secrets.json

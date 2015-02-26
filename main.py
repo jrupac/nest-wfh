@@ -9,9 +9,20 @@ to be run as a cron job.
 
 __author__ = 'ajay@roopakalu.com (Ajay Roopakalu)'
 
+import re
+import subprocess
+import sys
+
+import dateutil.parser
 import requests
 import nmap
-import subprocess
+
+from datetime import datetime
+from datetime import timedelta
+from dateutil.tz import tzlocal
+
+from oauth2client import client
+from googleapiclient import sample_tools
 
 import keys
 
@@ -20,6 +31,9 @@ THERMOSTATS_URL = 'https://developer-api.nest.com/devices/thermostats/'
 
 STATUS_HOME = '"home"'
 STATUS_AWAY = '"away"'
+
+ENTER_WORK_REGEX = re.compile('I entered work')
+EXIT_WORK_REGEX = re.compile('I exited work')
 
 
 def IsReferenceDeviceOnNetwork(ip_subnet, mac_address):
@@ -33,6 +47,7 @@ def IsReferenceDeviceOnNetwork(ip_subnet, mac_address):
     if line.find(mac_address) > 0:
       return True
   return False
+
 
 def GetAllThermostats(access_token):
   response = requests.get(THERMOSTATS_URL, params={'auth': access_token})
@@ -58,18 +73,41 @@ def SetAwayStatus(access_token, structure_ids, status):
   return results
 
 
-def main():
+def GetWorkStatusEvents(service):
+  try:
+    events = service.events().list(
+        calendarId=keys.WORK_HOURS_CALENDAR_ID, orderBy='startTime',
+        singleEvents=True).execute()
+    return events.get('items')
+  except client.AccessTokenRefreshError:
+    print ('The credentials have been revoked or expired, please re-run'
+      'the application to re-authorize.')
+    sys.exit(-1)
+
+def main(argv):
+  now = datetime.now()
+  today = datetime(now.year, now.month, now.day, tzinfo=tzlocal())
+  tomorrow = today + timedelta(days=1)
+
   thermostat_model = GetAllThermostats(keys.ACCESS_TOKEN)
   structure_ids = GetStructureIds(thermostat_model)
 
-  if IsReferenceDeviceOnNetwork(
-      keys.PRIVATE_IP_SUBNET, keys.DEVICE_MAC_ADDRESS):
-    print 'Device found on network; set status to HOME'
-    print SetAwayStatus(keys.ACCESS_TOKEN, structure_ids, status=STATUS_HOME)
-  else:
-    print 'No device found on network; set status to AWAY'
-    print SetAwayStatus(keys.ACCESS_TOKEN, structure_ids, status=STATUS_AWAY)
+  service, flags = sample_tools.init(
+      argv, 'calendar', 'v3', __doc__, __file__,
+      scope='https://www.googleapis.com/auth/calendar.readonly')
+
+  for event in GetWorkStatusEvents(service):
+    startTime = dateutil.parser.parse(event.get('start').get('dateTime'))
+    if today < startTime and startTime < tomorrow:
+      if EXIT_WORK_REGEX.match(event.get('summary')):
+        print 'User is coming home..'
+        print SetAwayStatus(
+            keys.ACCESS_TOKEN, structure_ids, status=STATUS_HOME)
+      elif ENTER_WORK_REGEX.match(event.get('summary')):
+        print 'User is at work..'
+        print SetAwayStatus(
+            keys.ACCESS_TOKEN, structure_ids, status=STATUS_AWAY)
 
 
 if __name__ == '__main__':
-  main()
+  main(sys.argv)
