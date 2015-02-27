@@ -94,11 +94,10 @@ def SetAwayStatus(access_token, structure_ids, status):
 
 def GetWorkStatusEvents(service, today, tomorrow):
   try:
-    print tz.tzlocal().tzname(today)
     events = service.events().list(
         calendarId=keys.WORK_HOURS_CALENDAR_ID, orderBy='startTime',
-        singleEvents=True, timeZone=tz.tzlocal().tzname(today),
-        timeMin=today.isoformat(), timeMax=tomorrow.isoformat()).execute()
+        singleEvents=True, timeMin=today.isoformat(),
+        timeMax=tomorrow.isoformat()).execute()
     return events.get('items')
   except client.AccessTokenRefreshError:
     print ('The credentials have been revoked or expired, please re-run'
@@ -107,7 +106,8 @@ def GetWorkStatusEvents(service, today, tomorrow):
 
 def main(argv):
   now = datetime.now(tz=tz.tzlocal())
-  today = datetime(now.year, now.month, now.day, tzinfo=now.tzinfo)
+  localized_now = now.astimezone(tz.gettz(keys.WORK_HOURS_CALENDAR_TZ))
+  today = localized_now.replace(hour=0, minute=0, second=0, microsecond=0)
   tomorrow = today + timedelta(days=1)
 
   thermostat_model = GetAllThermostats(keys.ACCESS_TOKEN)
@@ -120,11 +120,13 @@ def main(argv):
   for event in GetWorkStatusEvents(service, today, tomorrow):
     startTime = dateutil.parser.parse(event.get('start').get('dateTime'))
     if today < startTime and startTime < tomorrow:
-      if now.hour <= MIDDAY and ENTER_WORK_REGEX.match(event.get('summary')):
+      if (localized_now.hour <= MIDDAY and
+          ENTER_WORK_REGEX.match(event.get('summary'))):
         print 'User is at work..'
         print SetAwayStatus(
             keys.ACCESS_TOKEN, structure_ids, status=STATUS_AWAY)
-      elif now.hour > MIDDAY and EXIT_WORK_REGEX.match(event.get('summary')):
+      if (localized_now.hour > MIDDAY and
+          EXIT_WORK_REGEX.match(event.get('summary'))):
         print 'User is coming home..'
         print SetAwayStatus(
             keys.ACCESS_TOKEN, structure_ids, status=STATUS_HOME)
