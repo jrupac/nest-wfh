@@ -19,7 +19,7 @@ import nmap
 
 from datetime import datetime
 from datetime import timedelta
-from dateutil.tz import tzlocal
+from dateutil import tz
 
 from oauth2client import client
 from googleapiclient import sample_tools
@@ -86,7 +86,11 @@ def GetWorkStatusEvents(service):
 
 def main(argv):
   now = datetime.now()
-  today = datetime(now.year, now.month, now.day, tzinfo=tzlocal())
+  today = datetime(now.year, now.month, now.day, tzinfo=tz.tzlocal())
+  localized_today = today.astimezone(tz.gettz(keys.WORK_HOURS_CALENDAR_TZ))
+  today = datetime(
+    localized_today.year, localized_today.month, localized_today.day,
+    tzinfo=localized_today.tzinfo)
   tomorrow = today + timedelta(days=1)
 
   thermostat_model = GetAllThermostats(keys.ACCESS_TOKEN)
