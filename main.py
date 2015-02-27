@@ -34,6 +34,7 @@ STATUS_AWAY = '"away"'
 
 ENTER_WORK_REGEX = re.compile('I entered work')
 EXIT_WORK_REGEX = re.compile('I exited work')
+MIDDAY = 12 # Hour of the day to indicate noon
 
 
 def IsReferenceDeviceOnNetwork(ip_subnet, mac_address):
@@ -61,23 +62,43 @@ def GetStructureIds(thermostat_model):
   return structure_ids
 
 
-def SetAwayStatus(access_token, structure_ids, status):
+def GetAwayStatus(access_token, structure_ids):
   params = {'auth': access_token}
   headers = {'Content-Type': 'application/json'}
   results = {}
   for structure_id in structure_ids:
-    response = requests.put(
+    response = requests.get(
         STRUCTURE_URL + structure_id + '/away',
-        params=params, headers=headers, data=status)
-    results[structure_id] = (response.text == status)
+        params=params, headers=headers)
+    results[structure_id] = response.text
   return results
 
 
-def GetWorkStatusEvents(service):
+def SetAwayStatus(access_token, structure_ids, status):
+  params = {'auth': access_token}
+  headers = {'Content-Type': 'application/json'}
+  results = {}
+  existing_statuses = GetAwayStatus(access_token, structure_ids)
+
+  for structure_id in structure_ids:
+    if existing_statuses[structure_id] != status:
+      print 'Setting status of', structure_id, 'to:', status
+      response = requests.put(
+          STRUCTURE_URL + structure_id + '/away',
+          params=params, headers=headers, data=status)
+      results[structure_id] = (response.text == status)
+    else:
+      print 'Target status of', status, 'for', structure_id, 'already set.'
+  return results
+
+
+def GetWorkStatusEvents(service, today, tomorrow):
   try:
+    print tz.tzlocal().tzname(today)
     events = service.events().list(
         calendarId=keys.WORK_HOURS_CALENDAR_ID, orderBy='startTime',
-        singleEvents=True).execute()
+        singleEvents=True, timeZone=tz.tzlocal().tzname(today),
+        timeMin=today.isoformat(), timeMax=tomorrow.isoformat()).execute()
     return events.get('items')
   except client.AccessTokenRefreshError:
     print ('The credentials have been revoked or expired, please re-run'
@@ -85,12 +106,8 @@ def GetWorkStatusEvents(service):
     sys.exit(-1)
 
 def main(argv):
-  now = datetime.now()
-  today = datetime(now.year, now.month, now.day, tzinfo=tz.tzlocal())
-  localized_today = today.astimezone(tz.gettz(keys.WORK_HOURS_CALENDAR_TZ))
-  today = datetime(
-    localized_today.year, localized_today.month, localized_today.day,
-    tzinfo=localized_today.tzinfo)
+  now = datetime.now(tz=tz.tzlocal())
+  today = datetime(now.year, now.month, now.day, tzinfo=now.tzinfo)
   tomorrow = today + timedelta(days=1)
 
   thermostat_model = GetAllThermostats(keys.ACCESS_TOKEN)
@@ -100,17 +117,17 @@ def main(argv):
       argv, 'calendar', 'v3', __doc__, __file__,
       scope='https://www.googleapis.com/auth/calendar.readonly')
 
-  for event in GetWorkStatusEvents(service):
+  for event in GetWorkStatusEvents(service, today, tomorrow):
     startTime = dateutil.parser.parse(event.get('start').get('dateTime'))
     if today < startTime and startTime < tomorrow:
-      if EXIT_WORK_REGEX.match(event.get('summary')):
-        print 'User is coming home..'
-        print SetAwayStatus(
-            keys.ACCESS_TOKEN, structure_ids, status=STATUS_HOME)
-      elif ENTER_WORK_REGEX.match(event.get('summary')):
+      if now.hour <= MIDDAY and ENTER_WORK_REGEX.match(event.get('summary')):
         print 'User is at work..'
         print SetAwayStatus(
             keys.ACCESS_TOKEN, structure_ids, status=STATUS_AWAY)
+      elif now.hour > MIDDAY and EXIT_WORK_REGEX.match(event.get('summary')):
+        print 'User is coming home..'
+        print SetAwayStatus(
+            keys.ACCESS_TOKEN, structure_ids, status=STATUS_HOME)
 
 
 if __name__ == '__main__':
