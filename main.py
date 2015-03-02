@@ -34,6 +34,7 @@ STATUS_AWAY = '"away"'
 
 ENTER_WORK_REGEX = re.compile('I entered work')
 EXIT_WORK_REGEX = re.compile('I exited work')
+WFH_REGEX = re.compile('WFH')
 MIDDAY = 12 # Hour of the day to indicate noon
 
 
@@ -118,18 +119,28 @@ def main(argv):
       scope='https://www.googleapis.com/auth/calendar.readonly')
 
   for event in GetWorkStatusEvents(service, today, tomorrow):
-    startTime = dateutil.parser.parse(event.get('start').get('dateTime'))
-    if today < startTime and startTime < tomorrow:
-      if (localized_now.hour <= MIDDAY and
-          ENTER_WORK_REGEX.match(event.get('summary'))):
-        print 'User is at work..'
-        print SetAwayStatus(
-            keys.ACCESS_TOKEN, structure_ids, status=STATUS_AWAY)
-      if (localized_now.hour > MIDDAY and
-          EXIT_WORK_REGEX.match(event.get('summary'))):
-        print 'User is coming home..'
+    try:
+      if WFH_REGEX.match(event.get('summary')):
         print SetAwayStatus(
             keys.ACCESS_TOKEN, structure_ids, status=STATUS_HOME)
+      startEntity = event.get('start')
+      # Ignore full-day events here.
+      if not startEntity.get('dateTime'):
+        continue
+      startTime = dateutil.parser.parse(startEntity.get('dateTime'))
+      if today < startTime and startTime < tomorrow:
+          if (localized_now.hour <= MIDDAY and
+              ENTER_WORK_REGEX.match(event.get('summary'))):
+            print 'User is at work..'
+            print SetAwayStatus(
+                keys.ACCESS_TOKEN, structure_ids, status=STATUS_AWAY)
+          if (localized_now.hour > MIDDAY and
+              EXIT_WORK_REGEX.match(event.get('summary'))):
+            print 'User is coming home..'
+            print SetAwayStatus(
+                keys.ACCESS_TOKEN, structure_ids, status=STATUS_HOME)
+    except Exception as e:
+      print 'Error while performing operation:', e
 
 
 if __name__ == '__main__':
