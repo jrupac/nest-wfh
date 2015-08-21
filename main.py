@@ -21,9 +21,7 @@ from datetime import datetime
 from datetime import timedelta
 from dateutil import tz
 
-from oauth2client import client
-from googleapiclient import sample_tools
-
+import calendar_client
 import keys
 
 STRUCTURE_URL = 'https://developer-api.nest.com/structures/'
@@ -44,7 +42,7 @@ def IsReferenceDeviceOnNetwork(ip_subnet, mac_address):
   nm.scan(hosts=ip_subnet, arguments='-sP')
   # Query the ARP cache for the specified MAC address
   proc = subprocess.Popen(['arp', '-n'], stdout=subprocess.PIPE)
-  output, err = proc.communicate()
+  output, _ = proc.communicate()
   for line in output.split('\n'):
     if line.find(mac_address) > 0:
       return True
@@ -93,18 +91,6 @@ def SetAwayStatus(access_token, structure_ids, status):
   return results
 
 
-def GetWorkStatusEvents(service, today, tomorrow):
-  try:
-    events = service.events().list(
-        calendarId=keys.WORK_HOURS_CALENDAR_ID, orderBy='startTime',
-        singleEvents=True, timeMin=today.isoformat(),
-        timeMax=tomorrow.isoformat()).execute()
-    return events.get('items')
-  except client.AccessTokenRefreshError:
-    print ('The credentials have been revoked or expired, please re-run'
-      'the application to re-authorize.')
-    sys.exit(-1)
-
 def main(argv):
   now = datetime.now(tz=tz.tzlocal())
   localized_now = now.astimezone(tz.gettz(keys.WORK_HOURS_CALENDAR_TZ))
@@ -113,12 +99,10 @@ def main(argv):
 
   thermostat_model = GetAllThermostats(keys.ACCESS_TOKEN)
   structure_ids = GetStructureIds(thermostat_model)
+  calendar_instance = calendar_client.Calendar(argv)
 
-  service, flags = sample_tools.init(
-      argv, 'calendar', 'v3', __doc__, __file__,
-      scope='https://www.googleapis.com/auth/calendar.readonly')
-
-  for event in GetWorkStatusEvents(service, today, tomorrow):
+  for event in calendar_instance.GetEvents(
+      keys.WORK_HOURS_CALENDAR_ID, today, tomorrow):
     try:
       if WFH_REGEX.match(event.get('summary')):
         print SetAwayStatus(
