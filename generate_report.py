@@ -46,7 +46,7 @@ def GenerateReport():
   calendar_instance = calendar_client.Calendar([])
 
   # Store report information as a list of dicts with the date, enter work time,
-  # and exit work time.
+  # and exit work time, and timedelta between them.
   report = []
 
   for event in calendar_instance.GetEvents(
@@ -54,9 +54,9 @@ def GenerateReport():
     startEntity = event.get('start')
     summary = event.get('summary')
 
-    # Treat OOO as 0 hours worked.
+    # Skip OOOs (out of office).
     if OOO_REGEX.match(summary):
-      pass # TODO
+      continue
     # Treat WFH as 8 hours worked.
     if WFH_REGEX.match(summary):
       startDate = dateutil.parser.parse(startEntity.get('date'))
