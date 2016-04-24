@@ -8,6 +8,10 @@ __author__ = 'ajay@roopakalu.com (Ajay Roopakalu)'
 from oauth2client import client
 from googleapiclient import sample_tools
 
+import log
+
+logging = log.Log(__name__)
+
 
 class Calendar(object):
   """Class to access the Google Calendar API."""
@@ -40,6 +44,7 @@ class Calendar(object):
           timeMax=end.isoformat()).execute()
       return events.get('items')
     except client.AccessTokenRefreshError:
-      print ('The credentials have been revoked or expired, please re-run'
-        'the application to re-authorize.')
+      logging.exception(
+          'The credentials have been revoked or expired, please re-run the '
+          'application to re-authorize.')
       sys.exit(-1)
