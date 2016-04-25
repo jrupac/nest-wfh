@@ -49,6 +49,7 @@ fan_active_metric = pc.Gauge(
 logging = log.Log(__name__)
 
 EPOCH = datetime(1970, 1, 1)
+VALID_HVAC_STATES = frozenset(['heating', 'cooling', 'off'])
 
 STRUCTURE_URL = 'https://developer-api.nest.com/structures/'
 THERMOSTATS_URL = 'https://developer-api.nest.com/devices/thermostats/'
@@ -122,20 +123,22 @@ def SetAwayStatus(access_token, structure_ids, status):
   return results
 
 
-def RecordCurrentTemp(thermostat_model):
+def RecordStats(thermostat_model):
   for thermostat in thermostat_model.itervalues():
     ambient_temperature_metric.set(thermostat['ambient_temperature_f'])
     target_temperature_high_metric.set(thermostat['target_temperature_high_f'])
     target_temperature_low_metric.set(thermostat['target_temperature_low_f'])
     humidity_metric.set(thermostat['humidity'])
-    fan_active_metric.labels(
-        'on' if thermostat['fan_timer_active'] else 'off').set(1)
+
+    fan_active_metric.labels('on').set(int(thermostat['fan_timer_active']))
+    fan_active_metric.labels('off').set(int(not thermostat['fan_timer_active']))
 
     hvac_state = thermostat['hvac_state']
-    if hvac_state not in ('heating', 'cooling', 'off'):
+    if hvac_state not in VALID_HVAC_STATES:
       logging.warning('Unexpected HVAC state: %s', hvac_state)
     else:
-      hvac_state_metric.labels(hvac_state).set(1)
+      for state in VALID_HVAC_STATES:
+        hvac_state_metric.labels(state).set(int(state == hvac_state))
 
 
 def PushMetrics():
@@ -152,7 +155,7 @@ def main(argv):
 
   logging.info('Retrieving known thermostats.')
   thermostat_model = GetAllThermostats(keys.ACCESS_TOKEN)
-  RecordCurrentTemp(thermostat_model)
+  RecordStats(thermostat_model)
   PushMetrics()
 
   logging.info('Retrieving relevant calendar events.')
