@@ -13,6 +13,7 @@ import subprocess
 import sys
 
 import dateutil.parser
+import prometheus_client as pc
 import requests
 import nmap
 
@@ -24,7 +25,30 @@ import calendar_client
 import log
 import keys
 
+registry = pc.CollectorRegistry()
+location_metric = pc.Gauge(
+    'location', 'Location of user', ['home', 'away'], registry=registry)
+ambient_temperature_metric = pc.Gauge(
+    'ambient_temperature', 'Current ambient temperature in Fahrenheit',
+    registry=registry)
+target_temperature_high_metric = pc.Gauge(
+    'target_temperature_high', 'Target high temperature in Fahrenheit',
+    registry=registry)
+target_temperature_low_metric = pc.Gauge(
+    'target_temperature_low', 'Target low temperature in Fahrenheit',
+    registry=registry)
+humidity_metric = pc.Gauge(
+    'humidity', 'Humidity in percentage', registry=registry)
+hvac_state_metric = pc.Gauge(
+    'hvac_state', 'State of HVAC ("heating", "cooling", or "off")',
+    ['state'], registry=registry)
+fan_active_metric = pc.Gauge(
+    'fan_timer_active', 'State of fan ("on" or "off")', ['state'],
+    registry=registry)
+
 logging = log.Log(__name__)
+
+EPOCH = datetime(1970, 1, 1)
 
 STRUCTURE_URL = 'https://developer-api.nest.com/structures/'
 THERMOSTATS_URL = 'https://developer-api.nest.com/devices/thermostats/'
@@ -91,14 +115,45 @@ def SetAwayStatus(access_token, structure_ids, status):
     else:
       logging.info(
           'Target status of %s for %s already set.', status, structure_id)
+  if status == STATUS_HOME:
+    location_metric.labels('home').set(1)
+  elif status == STATUS_AWAY:
+    location_metric.labels('away').set(1)
   return results
 
+
+def RecordCurrentTemp(thermostat_model):
+  for thermostat in thermostat_model.itervalues():
+    ambient_temperature_metric.set(thermostat['ambient_temperature_f'])
+    target_temperature_high_metric.set(thermostat['target_temperature_high_f'])
+    target_temperature_low_metric.set(thermostat['target_temperature_low_f'])
+    humidity_metric.set(thermostat['humidity'])
+    fan_active_metric.labels(
+        'on' if thermostat['fan_timer_active'] else 'off').set(1)
+
+    hvac_state = thermostat['hvac_state']
+    if hvac_state not in ('heating', 'cooling', 'off'):
+      logging.warning('Unexpected HVAC state: %s', hvac_state)
+    else:
+      hvac_state_metric.labels(hvac_state).set(1)
+
+
+def PushMetrics():
+  if keys.PROMETHEUS_ENDPOINT is not None:
+    logging.info('Pushing metrics to %s', keys.PROMETHEUS_ENDPOINT)
+    ret = pc.push_to_gateway(
+        keys.PROMETHEUS_ENDPOINT, job='nest-wfh', registry=registry)
 
 def main(argv):
   now = datetime.now(tz=tz.tzlocal())
   localized_now = now.astimezone(tz.gettz(keys.WORK_HOURS_CALENDAR_TZ))
   today = localized_now.replace(hour=0, minute=0, second=0, microsecond=0)
   tomorrow = today + timedelta(days=1)
+
+  logging.info('Retrieving known thermostats.')
+  thermostat_model = GetAllThermostats(keys.ACCESS_TOKEN)
+  RecordCurrentTemp(thermostat_model)
+  PushMetrics()
 
   logging.info('Retrieving relevant calendar events.')
   calendar_instance = calendar_client.Calendar(argv)
@@ -108,8 +163,6 @@ def main(argv):
     logging.info('No events found.')
     exit(0)
 
-  logging.info('Retrieving known thermostats.')
-  thermostat_model = GetAllThermostats(keys.ACCESS_TOKEN)
   structure_ids = GetStructureIds(thermostat_model)
 
   for event in events:
@@ -141,6 +194,7 @@ def main(argv):
     except Exception as e:
       logging.exception('Error while performing operation: %s', e)
 
+  PushMetrics()
 
 if __name__ == '__main__':
   main(sys.argv)
