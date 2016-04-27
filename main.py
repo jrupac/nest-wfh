@@ -26,8 +26,6 @@ import log
 import keys
 
 registry = pc.CollectorRegistry()
-location_metric = pc.Gauge(
-    'location', 'Location of user', ['home', 'away'], registry=registry)
 ambient_temperature_metric = pc.Gauge(
     'ambient_temperature', 'Current ambient temperature in Fahrenheit',
     registry=registry)
@@ -45,12 +43,17 @@ hvac_state_metric = pc.Gauge(
 fan_active_metric = pc.Gauge(
     'fan_timer_active', 'State of fan ("on" or "off")', ['state'],
     registry=registry)
+user_state_metric = pc.Gauge(
+    'user_state', 'State of user ("home", "away", or "auto-away")',
+    ['structure_id', 'state'], registry=registry)
 
 logging = log.Log(__name__)
 
 EPOCH = datetime(1970, 1, 1)
 VALID_HVAC_STATES = frozenset(['heating', 'cooling', 'off'])
+VALID_AWAY_STATES = frozenset(['home', 'away', 'auto-away'])
 
+DEVICES_URL = 'https://developer-api.nest.com/devices/'
 STRUCTURE_URL = 'https://developer-api.nest.com/structures/'
 THERMOSTATS_URL = 'https://developer-api.nest.com/devices/thermostats/'
 
@@ -81,22 +84,21 @@ def GetAllThermostats(access_token):
   return response.json()
 
 
-def GetStructureIds(thermostat_model):
+def GetStructureIds(thermostats):
   structure_ids = []
-  for thermostat in thermostat_model.itervalues():
+  for thermostat in thermostats.itervalues():
     structure_ids.append(thermostat['structure_id'])
   return structure_ids
 
 
-def GetAwayStatus(access_token, structure_ids):
+def GetStructures(access_token, structure_ids):
   params = {'auth': access_token}
   headers = {'Content-Type': 'application/json'}
   results = {}
   for structure_id in structure_ids:
     response = requests.get(
-        STRUCTURE_URL + structure_id + '/away',
-        params=params, headers=headers)
-    results[structure_id] = response.text
+        STRUCTURE_URL + structure_id, params=params, headers=headers)
+    results[structure_id] = response.json()
   return results
 
 
@@ -104,11 +106,11 @@ def SetAwayStatus(access_token, structure_ids, status):
   params = {'auth': access_token}
   headers = {'Content-Type': 'application/json'}
   results = {}
-  existing_statuses = GetAwayStatus(access_token, structure_ids)
+  existing_structures = GetStructures(access_token, structure_ids)
 
   for structure_id in structure_ids:
-    if existing_statuses[structure_id] != status:
-      logging.info('Setting status of %s to : %s',structure_id, status)
+    if existing_structures[structure_id]['away'] != status:
+      logging.info('Setting status of %s to : %s', structure_id, status)
       response = requests.put(
           STRUCTURE_URL + structure_id + '/away',
           params=params, headers=headers, data=status)
@@ -116,15 +118,11 @@ def SetAwayStatus(access_token, structure_ids, status):
     else:
       logging.info(
           'Target status of %s for %s already set.', status, structure_id)
-  if status == STATUS_HOME:
-    location_metric.labels('home').set(1)
-  elif status == STATUS_AWAY:
-    location_metric.labels('away').set(1)
   return results
 
 
-def RecordStats(thermostat_model):
-  for thermostat in thermostat_model.itervalues():
+def RecordStats(thermostats, structures):
+  for thermostat in thermostats.itervalues():
     ambient_temperature_metric.set(thermostat['ambient_temperature_f'])
     target_temperature_high_metric.set(thermostat['target_temperature_high_f'])
     target_temperature_low_metric.set(thermostat['target_temperature_low_f'])
@@ -140,12 +138,22 @@ def RecordStats(thermostat_model):
       for state in VALID_HVAC_STATES:
         hvac_state_metric.labels(state).set(int(state == hvac_state))
 
+  for structure_id in structures:
+    user_state = structures[structure_id]['away']
+    if user_state not in VALID_AWAY_STATES:
+      logging.warning('Unexpected away state: %s', user_state)
+    else:
+      for state in VALID_AWAY_STATES:
+        user_state_metric.labels(
+            structure_id, state).set(int(state == user_state))
+
 
 def PushMetrics():
   if keys.PROMETHEUS_ENDPOINT is not None:
     logging.info('Pushing metrics to %s', keys.PROMETHEUS_ENDPOINT)
     ret = pc.push_to_gateway(
         keys.PROMETHEUS_ENDPOINT, job='nest-wfh', registry=registry)
+
 
 def main(argv):
   now = datetime.now(tz=tz.tzlocal())
@@ -154,8 +162,11 @@ def main(argv):
   tomorrow = today + timedelta(days=1)
 
   logging.info('Retrieving known thermostats.')
-  thermostat_model = GetAllThermostats(keys.ACCESS_TOKEN)
-  RecordStats(thermostat_model)
+  thermostats = GetAllThermostats(keys.ACCESS_TOKEN)
+  structure_ids = GetStructureIds(thermostats)
+  logging.info('Retrieving known structures.')
+  structures = GetStructures(keys.ACCESS_TOKEN, structure_ids)
+  RecordStats(thermostats, structures)
   PushMetrics()
 
   logging.info('Retrieving relevant calendar events.')
@@ -165,8 +176,6 @@ def main(argv):
   if not events:
     logging.info('No events found.')
     exit(0)
-
-  structure_ids = GetStructureIds(thermostat_model)
 
   for event in events:
     try:
