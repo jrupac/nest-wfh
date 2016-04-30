@@ -3,7 +3,7 @@ Standalone tool to generate report about number of hours worked.
 
 Example:
   To get a report for the last four weeks:
-    $ python generate_report.py --weeks=4
+    $ python generate_report.py --start_weeks=4
 """
 
 __author__ = 'ajay@roopakalu.com (Ajay Roopakalu)'
@@ -22,7 +22,9 @@ import calendar_client
 import keys
 
 
-gflags.DEFINE_integer('weeks', 12, 'Weeks to generate report for.')
+gflags.DEFINE_integer('start_weeks', 12, 'Weeks ago to start report.')
+
+gflags.DEFINE_integer('end_weeks', 0, 'Weeks ago to end report.')
 
 gflags.DEFINE_string(
     'mode', 'human', 'Format of outputted report. Must be one of: "human",'
@@ -41,7 +43,8 @@ def GenerateReport():
   now = datetime.now(tz=tz.tzlocal())
   localized_now = now.astimezone(tz.gettz(keys.WORK_HOURS_CALENDAR_TZ))
   today = localized_now.replace(hour=0, minute=0, second=0, microsecond=0)
-  start = today - timedelta(weeks=FLAGS.weeks)
+  today -= timedelta(weeks=FLAGS.end_weeks)
+  start = today - timedelta(weeks=FLAGS.start_weeks)
 
   calendar_instance = calendar_client.Calendar([])
 
@@ -85,6 +88,9 @@ def GenerateReport():
 
 def PrintReport(report):
   for index, line in enumerate(report):
+    # Skip incomplete lines.
+    if 'delta' not in line.keys() or 'date' not in line.keys():
+      continue
     if FLAGS.mode == 'human':
       # Print date as YYYY-MM-DD and delta as HH:MM:SS.
       print '%s %s' % (line['date'], line['delta'])

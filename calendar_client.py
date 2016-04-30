@@ -37,14 +37,21 @@ class Calendar(object):
     Returns:
       List of event objects as dicts or None.
     """
+    event_list = []
+    page_token = None
     try:
-      events = self._service.events().list(
-          calendarId=calendar_id, orderBy='startTime',
-          singleEvents=True, timeMin=start.isoformat(),
-          timeMax=end.isoformat()).execute()
-      return events.get('items')
+      while True:
+        events = self._service.events().list(
+            calendarId=calendar_id, orderBy='startTime',
+            singleEvents=True, timeMin=start.isoformat(),
+            timeMax=end.isoformat(), pageToken=page_token).execute()
+        event_list.extend(events['items'])
+        page_token = events.get('nextPageToken')
+        if not page_token:
+          break
     except client.AccessTokenRefreshError:
       logging.exception(
           'The credentials have been revoked or expired, please re-run the '
           'application to re-authorize.')
-      sys.exit(-1)
+      exit(-1)
+    return event_list
