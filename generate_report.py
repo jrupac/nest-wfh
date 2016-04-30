@@ -46,7 +46,7 @@ def GenerateReport():
   today -= timedelta(weeks=FLAGS.end_weeks)
   start = today - timedelta(weeks=FLAGS.start_weeks)
 
-  calendar_instance = calendar_client.Calendar([])
+  calendar_instance = calendar_client.Calendar()
 
   # Store report information as a list of dicts with the date, enter work time,
   # and exit work time, and timedelta between them.

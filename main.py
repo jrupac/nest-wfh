@@ -10,7 +10,6 @@ __author__ = 'ajay@roopakalu.com (Ajay Roopakalu)'
 
 import re
 import subprocess
-import sys
 
 import dateutil.parser
 import prometheus_client as pc
@@ -151,11 +150,11 @@ def RecordStats(thermostats, structures):
 def PushMetrics():
   if keys.PROMETHEUS_ENDPOINT is not None:
     logging.info('Pushing metrics to %s', keys.PROMETHEUS_ENDPOINT)
-    ret = pc.push_to_gateway(
+    pc.push_to_gateway(
         keys.PROMETHEUS_ENDPOINT, job='nest-wfh', registry=registry)
 
 
-def main(argv):
+def main():
   now = datetime.now(tz=tz.tzlocal())
   localized_now = now.astimezone(tz.gettz(keys.WORK_HOURS_CALENDAR_TZ))
   today = localized_now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -170,7 +169,7 @@ def main(argv):
   PushMetrics()
 
   logging.info('Retrieving relevant calendar events.')
-  calendar_instance = calendar_client.Calendar(argv)
+  calendar_instance = calendar_client.Calendar()
   events = calendar_instance.GetEvents(
       keys.WORK_HOURS_CALENDAR_ID, today, tomorrow)
   if not events:
@@ -191,22 +190,22 @@ def main(argv):
       startTime = dateutil.parser.parse(startEntity.get('dateTime'))
 
       if today < startTime < tomorrow:
-          if (localized_now.hour <= MIDDAY and
-              ENTER_WORK_REGEX.match(event.get('summary'))):
-            logging.info('User is at work..')
-            logging.info(
-                SetAwayStatus(
-                    keys.ACCESS_TOKEN, structure_ids, status=STATUS_AWAY))
-          if (localized_now.hour > MIDDAY and
-              EXIT_WORK_REGEX.match(event.get('summary'))):
-            logging.info('User is coming home..')
-            logging.info(
-                SetAwayStatus(
-                    keys.ACCESS_TOKEN, structure_ids, status=STATUS_HOME))
+        if (localized_now.hour <= MIDDAY and
+            ENTER_WORK_REGEX.match(event.get('summary'))):
+          logging.info('User is at work..')
+          logging.info(
+              SetAwayStatus(
+                  keys.ACCESS_TOKEN, structure_ids, status=STATUS_AWAY))
+        if (localized_now.hour > MIDDAY and
+            EXIT_WORK_REGEX.match(event.get('summary'))):
+          logging.info('User is coming home..')
+          logging.info(
+              SetAwayStatus(
+                  keys.ACCESS_TOKEN, structure_ids, status=STATUS_HOME))
     except Exception as e:
       logging.exception('Error while performing operation: %s', e)
 
   PushMetrics()
 
 if __name__ == '__main__':
-  main(sys.argv)
+  main()
