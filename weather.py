@@ -3,7 +3,7 @@ Implementation of the OpenWeatherMap API.
 """
 __author__ = 'ajay@roopakalu.com (Ajay Roopakalu)'
 
-OPEN_WEATHER_MAP_URL = 'api.openweathermap.org/data/2.5'
+OPEN_WEATHER_MAP_URL = 'http://api.openweathermap.org/data/2.5'
 WEATHER_URL = '/weather'
 
 import requests
