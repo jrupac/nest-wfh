@@ -1,20 +1,19 @@
 """
 Nest-WFH is a project that aims to prevent your Nest thermostat from going into
-auto-away mode if your phone is also at home.
+auto-away mode if you are home.
 
-The program works by querying to see if your phone's MAC address appears on the
-network. If so, it will manually set all thermostats to "home". This is meant
-to be run as a cron job.
+The program works by querying your calendar to look for specific events. If so,
+it will manually set all thermostats to "home". This is meant to be run as a
+cron job.
 """
 __author__ = 'ajay@roopakalu.com (Ajay Roopakalu)'
 
 import re
-import subprocess
+import sys
 
 import dateutil.parser
+import gflags
 import prometheus_client as pc
-import requests
-import nmap
 
 from datetime import datetime
 from datetime import timedelta
@@ -22,7 +21,13 @@ from dateutil import tz
 
 import calendar_client
 import log
+import nest
 import keys
+import weather
+
+gflags.DEFINE_boolean('set_status', True, 'Whether to modify Nest state.')
+
+FLAGS = gflags.FLAGS
 
 registry = pc.CollectorRegistry()
 ambient_temperature_metric = pc.Gauge(
@@ -33,6 +38,9 @@ target_temperature_high_metric = pc.Gauge(
     registry=registry)
 target_temperature_low_metric = pc.Gauge(
     'target_temperature_low', 'Target low temperature in Fahrenheit',
+    registry=registry)
+external_temperature_metric = pc.Gauge(
+    'external_temperature', 'Current external temperature in Fahrenheit',
     registry=registry)
 humidity_metric = pc.Gauge(
     'humidity', 'Humidity in percentage', registry=registry)
@@ -65,62 +73,7 @@ WFH_REGEX = re.compile('WFH')
 MIDDAY = 12 # Hour of the day to indicate noon
 
 
-def IsReferenceDeviceOnNetwork(ip_subnet, mac_address):
-  # Refresh the ARP cache by doing a fast scan of hosts on this subnet
-  nm = nmap.PortScanner()
-  nm.scan(hosts=ip_subnet, arguments='-sP')
-  # Query the ARP cache for the specified MAC address
-  proc = subprocess.Popen(['arp', '-n'], stdout=subprocess.PIPE)
-  output, _ = proc.communicate()
-  for line in output.split('\n'):
-    if line.find(mac_address) > 0:
-      return True
-  return False
-
-
-def GetAllThermostats(access_token):
-  response = requests.get(THERMOSTATS_URL, params={'auth': access_token})
-  return response.json()
-
-
-def GetStructureIds(thermostats):
-  structure_ids = []
-  for thermostat in thermostats.itervalues():
-    structure_ids.append(thermostat['structure_id'])
-  return structure_ids
-
-
-def GetStructures(access_token, structure_ids):
-  params = {'auth': access_token}
-  headers = {'Content-Type': 'application/json'}
-  results = {}
-  for structure_id in structure_ids:
-    response = requests.get(
-        STRUCTURE_URL + structure_id, params=params, headers=headers)
-    results[structure_id] = response.json()
-  return results
-
-
-def SetAwayStatus(access_token, structure_ids, status):
-  params = {'auth': access_token}
-  headers = {'Content-Type': 'application/json'}
-  results = {}
-  existing_structures = GetStructures(access_token, structure_ids)
-
-  for structure_id in structure_ids:
-    if existing_structures[structure_id]['away'] != status:
-      logging.info('Setting status of %s to : %s', structure_id, status)
-      response = requests.put(
-          STRUCTURE_URL + structure_id + '/away',
-          params=params, headers=headers, data=status)
-      results[structure_id] = (response.text == status)
-    else:
-      logging.info(
-          'Target status of %s for %s already set.', status, structure_id)
-  return results
-
-
-def RecordStats(thermostats, structures):
+def RecordStats(thermostats, structures, external_temp):
   for thermostat in thermostats.itervalues():
     ambient_temperature_metric.set(thermostat['ambient_temperature_f'])
     target_temperature_high_metric.set(thermostat['target_temperature_high_f'])
@@ -146,6 +99,8 @@ def RecordStats(thermostats, structures):
         user_state_metric.labels(
             structure_id, state).set(int(state == user_state))
 
+  external_temperature_metric.set(external_temp)
+
 
 def PushMetrics():
   if keys.PROMETHEUS_ENDPOINT is not None:
@@ -154,18 +109,22 @@ def PushMetrics():
         keys.PROMETHEUS_ENDPOINT, job='nest-wfh', registry=registry)
 
 
-def main():
+def Run():
   now = datetime.now(tz=tz.tzlocal())
   localized_now = now.astimezone(tz.gettz(keys.WORK_HOURS_CALENDAR_TZ))
   today = localized_now.replace(hour=0, minute=0, second=0, microsecond=0)
   tomorrow = today + timedelta(days=1)
 
   logging.info('Retrieving known thermostats.')
-  thermostats = GetAllThermostats(keys.ACCESS_TOKEN)
-  structure_ids = GetStructureIds(thermostats)
+  thermostats = nest.GetAllThermostats(keys.NEST_ACCESS_TOKEN, THERMOSTATS_URL)
+  structure_ids = nest.GetStructureIds(thermostats)
   logging.info('Retrieving known structures.')
-  structures = GetStructures(keys.ACCESS_TOKEN, structure_ids)
-  RecordStats(thermostats, structures)
+  structures = nest.GetStructures(
+      keys.NEST_ACCESS_TOKEN, STRUCTURE_URL, structure_ids)
+  logging.info('Retrieving external temperature.')
+  external_temp = weather.GetCurrentExternalTemperature(
+      keys.OWM_API_KEY, keys.LOCATION_LATITUDE, keys.LOCATION_LONGITUDE)
+  RecordStats(thermostats, structures, external_temp)
   PushMetrics()
 
   logging.info('Retrieving relevant calendar events.')
@@ -181,7 +140,9 @@ def main():
       # If WFH, always set status to HOME.
       if WFH_REGEX.match(event.get('summary')):
         logging.info(
-            SetAwayStatus(keys.ACCESS_TOKEN, structure_ids, status=STATUS_HOME))
+            nest.SetAwayStatus(
+                keys.NEST_ACCESS_TOKEN, STRUCTURE_URL, structure_ids,
+                status=STATUS_HOME))
 
       startEntity = event.get('start')
       # Ignore full-day events here.
@@ -191,21 +152,30 @@ def main():
 
       if today < startTime < tomorrow:
         if (localized_now.hour <= MIDDAY and
-            ENTER_WORK_REGEX.match(event.get('summary'))):
+              ENTER_WORK_REGEX.match(event.get('summary'))):
           logging.info('User is at work..')
-          logging.info(
-              SetAwayStatus(
-                  keys.ACCESS_TOKEN, structure_ids, status=STATUS_AWAY))
+          if FLAGS.set_status:
+            logging.info(
+              nest.SetAwayStatus(
+                keys.NEST_ACCESS_TOKEN, STRUCTURE_URL, structure_ids,
+                status=STATUS_AWAY))
         if (localized_now.hour > MIDDAY and
-            EXIT_WORK_REGEX.match(event.get('summary'))):
+              EXIT_WORK_REGEX.match(event.get('summary'))):
           logging.info('User is coming home..')
-          logging.info(
-              SetAwayStatus(
-                  keys.ACCESS_TOKEN, structure_ids, status=STATUS_HOME))
+          if FLAGS.set_status:
+            logging.info(
+              nest.SetAwayStatus(
+                keys.NEST_ACCESS_TOKEN, STRUCTURE_URL, structure_ids,
+                status=STATUS_HOME))
     except Exception as e:
       logging.exception('Error while performing operation: %s', e)
 
   PushMetrics()
 
+
+def main(argv):
+  FLAGS(argv)
+  Run()
+
 if __name__ == '__main__':
-  main()
+  main(sys.argv)

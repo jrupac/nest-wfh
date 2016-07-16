@@ -2,7 +2,6 @@
 Access the Google Calendar API and retrieve events from a calendar over a
 specified time range.
 """
-
 __author__ = 'ajay@roopakalu.com (Ajay Roopakalu)'
 
 import os
