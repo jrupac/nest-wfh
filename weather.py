@@ -12,12 +12,11 @@ import log
 
 logging = log.Log(__name__)
 
-def GetCurrentExternalTemperature(appid, latitude, longitude):
+def GetCurrentExternalTemperature(appid, cityid):
   params = {
       'APPID': appid,
-      'units': 'imperial',
-      'lat': latitude,
-      'lon': longitude
+      'id': cityid,
+      'units': 'imperial'
   }
   response = requests.put(
       OPEN_WEATHER_MAP_URL + WEATHER_URL,

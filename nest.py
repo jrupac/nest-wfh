@@ -37,7 +37,8 @@ def SetAwayStatus(access_token, structure_url, structure_ids, status):
   params = {'auth': access_token}
   headers = {'Content-Type': 'application/json'}
   results = {}
-  existing_structures = GetStructures(access_token, structure_ids)
+  existing_structures = GetStructures(
+      access_token, structure_url, structure_ids)
 
   for structure_id in structure_ids:
     if existing_structures[structure_id]['away'] != status:

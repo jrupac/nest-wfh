@@ -123,7 +123,7 @@ def Run():
       keys.NEST_ACCESS_TOKEN, STRUCTURE_URL, structure_ids)
   logging.info('Retrieving external temperature.')
   external_temp = weather.GetCurrentExternalTemperature(
-      keys.OWM_API_KEY, keys.LOCATION_LATITUDE, keys.LOCATION_LONGITUDE)
+      keys.OWM_API_KEY, keys.LOCATION_CITY_ID)
   RecordStats(thermostats, structures, external_temp)
   PushMetrics()
 
