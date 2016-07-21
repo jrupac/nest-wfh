@@ -12,10 +12,10 @@ import log
 
 logging = log.Log(__name__)
 
-def GetCurrentExternalTemperature(appid, cityid):
+def GetCurrentExternalTemperature(app_id, city_id):
   params = {
-      'APPID': appid,
-      'id': cityid,
+      'APPID': app_id,
+      'id': city_id,
       'units': 'imperial'
   }
   response = requests.put(
