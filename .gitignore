@@ -56,6 +56,10 @@ target/
 # PyCharm
 .idea/
 
+# Bazel
+/bazel-*
+
+# Various Nest-WFH internals
 keys.py
 calendar.dat
 client_secrets.json
