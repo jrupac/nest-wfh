@@ -43,7 +43,9 @@ external_temperature_metric = pc.Gauge(
     'external_temperature', 'Current external temperature in Fahrenheit',
     registry=registry)
 humidity_metric = pc.Gauge(
-    'humidity', 'Humidity in percentage', registry=registry)
+    'humidity', 'Internal humidity in percentage', registry=registry)
+external_humidity_metric = pc.Gauge(
+  'external_humidity', 'External humidity in percentage', registry=registry)
 hvac_state_metric = pc.Gauge(
     'hvac_state', 'State of HVAC ("heating", "cooling", or "off")',
     ['state'], registry=registry)
@@ -73,7 +75,7 @@ WFH_REGEX = re.compile('WFH')
 MIDDAY = 12 # Hour of the day to indicate noon
 
 
-def RecordStats(thermostats, structures, external_temp):
+def RecordStats(thermostats, structures, external_weather):
   for thermostat in thermostats.itervalues():
     ambient_temperature_metric.set(thermostat['ambient_temperature_f'])
     target_temperature_high_metric.set(thermostat['target_temperature_high_f'])
@@ -99,7 +101,8 @@ def RecordStats(thermostats, structures, external_temp):
         user_state_metric.labels(
             structure_id, state).set(int(state == user_state))
 
-  external_temperature_metric.set(external_temp)
+  external_temperature_metric.set(external_weather['temp'])
+  external_humidity_metric.set(external_weather['humidity'])
 
 
 def PushMetrics():
@@ -122,9 +125,9 @@ def Run():
   structures = nest.GetStructures(
       keys.NEST_ACCESS_TOKEN, STRUCTURE_URL, structure_ids)
   logging.info('Retrieving external temperature.')
-  external_temp = weather.GetCurrentExternalTemperature(
+  external_weather = weather.GetCurrentExternalWeather(
       keys.OWM_API_KEY, keys.LOCATION_CITY_ID)
-  RecordStats(thermostats, structures, external_temp)
+  RecordStats(thermostats, structures, external_weather)
   PushMetrics()
 
   logging.info('Retrieving relevant calendar events.')

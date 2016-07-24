@@ -12,7 +12,18 @@ import log
 
 logging = log.Log(__name__)
 
-def GetCurrentExternalTemperature(app_id, city_id):
+
+def GetCurrentExternalWeather(app_id, city_id):
+  """Get current weather data at the given city_id.
+
+  Args:
+    app_id: (str) OpenWeatherMap API key.
+    city_id: (str) OpenWeatherMap City ID.
+
+  Returns:
+    Dict containing temperature and humidity data for given location.
+
+  """
   params = {
       'APPID': app_id,
       'id': city_id,
@@ -26,4 +37,4 @@ def GetCurrentExternalTemperature(app_id, city_id):
   response_parsed = response.json()
   if 'main' not in response_parsed or 'temp' not in response_parsed['main']:
     logging.exception('Expected fields not in response: ', response.text)
-  return response_parsed['main']['temp']
+  return response_parsed['main']
