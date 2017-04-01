@@ -29,12 +29,12 @@ def GetCurrentExternalWeather(app_id, city_id):
       'id': city_id,
       'units': 'imperial'
   }
-  response = requests.put(
+  response = requests.get(
       OPEN_WEATHER_MAP_URL + WEATHER_URL,
       params=params)
   if response.status_code != 200:
-    logging.exception('Unexpected response: ', response.text)
+    logging.exception('Unexpected response: %s', response.text)
   response_parsed = response.json()
   if 'main' not in response_parsed or 'temp' not in response_parsed['main']:
-    logging.exception('Expected fields not in response: ', response.text)
+    logging.exception('Expected fields not in response: %s', response.text)
   return response_parsed['main']
