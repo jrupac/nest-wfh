@@ -22,11 +22,11 @@ import calendar_client
 import keys
 
 
-gflags.DEFINE_integer('start_weeks', 12, 'Weeks ago to start report.')
+flags.DEFINE_integer('start_weeks', 12, 'Weeks ago to start report.')
 
-gflags.DEFINE_integer('end_weeks', 0, 'Weeks ago to end report.')
+flags.DEFINE_integer('end_weeks', 0, 'Weeks ago to end report.')
 
-gflags.DEFINE_string(
+flags.DEFINE_string(
     'mode', 'human', 'Format of outputted report. Must be one of: "human",'
     '"gnuplot", "csv", or "sheets" (Google Sheets).')
 
