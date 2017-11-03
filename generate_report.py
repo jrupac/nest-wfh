@@ -12,8 +12,8 @@ import re
 import sys
 
 import dateutil.parser
-import gflags
 
+from absl import flags
 from datetime import datetime
 from datetime import timedelta
 from dateutil import tz
@@ -30,7 +30,7 @@ gflags.DEFINE_string(
     'mode', 'human', 'Format of outputted report. Must be one of: "human",'
     '"gnuplot", "csv", or "sheets" (Google Sheets).')
 
-FLAGS = gflags.FLAGS
+FLAGS = flags.FLAGS
 
 WFH_REGEX = re.compile(r'WFH')
 OOO_REGEX = re.compile(r'OOO')

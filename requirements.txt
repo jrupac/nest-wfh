@@ -1,0 +1,8 @@
+absl_py==0.1.4
+prometheus_client==0.0.21
+httplib2==0.10.3
+requests==2.12.4
+absl==0.0
+python_dateutil==2.6.1
+google_api_python_client==1.6.4
+nmap==0.0.1
