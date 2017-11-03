@@ -12,9 +12,9 @@ import re
 import sys
 
 import dateutil.parser
-import gflags
 import prometheus_client as pc
 
+from absl import flags
 from datetime import datetime
 from datetime import timedelta
 from dateutil import tz
@@ -25,9 +25,9 @@ import nest
 import keys
 import weather
 
-gflags.DEFINE_boolean('set_status', True, 'Whether to modify Nest state.')
+flags.DEFINE_boolean('set_status', True, 'Whether to modify Nest state.')
 
-FLAGS = gflags.FLAGS
+FLAGS = flags.FLAGS
 
 registry = pc.CollectorRegistry()
 ambient_temperature_metric = pc.Gauge(
